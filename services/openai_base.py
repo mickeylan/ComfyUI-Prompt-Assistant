@@ -42,6 +42,9 @@ class OpenAICompatibleService(BaseAPIService):
             
         返回:
             str: 最终请求地址
+            
+        注意:
+            仅允许本地/内网地址，禁止访问公网云端服务
         """
         if not raw_url:
             return ''
@@ -50,19 +53,31 @@ class OpenAICompatibleService(BaseAPIService):
         
         # 规则1：井号强制模式 - 用户明确要求使用完整地址
         if url.endswith('#'):
-            return url[:-1].rstrip('/')
+            url = url[:-1].rstrip('/')
+        else:
+            # 规则2：智能检测 - 检查URL中是否已包含已知的API端点
+            has_endpoint = False
+            for endpoint in OpenAICompatibleService._known_endpoints:
+                if endpoint in url:
+                    has_endpoint = True
+                    break
+            
+            if not has_endpoint:
+                # 规则3：常规模式 - 需要拼接 /chat/completions
+                url = url.rstrip('/') + '/chat/completions'
+            else:
+                url = url.rstrip('/')
         
-        # 规则2：智能检测 - 检查URL中是否已包含已知的API端点
-        for endpoint in OpenAICompatibleService._known_endpoints:
-            if endpoint in url:
-                # 已包含完整端点，直接返回（移除末尾斜杠）
-                return url.rstrip('/')
+        # 安全校验：仅允许本地/内网地址
+        if not is_local_or_private_url(url):
+            from ..utils.common import ERROR_PREFIX
+            print(f"{ERROR_PREFIX} 安全限制: 禁止访问公网地址，仅允许本地模型 | URL: {url}")
+            raise ValueError(
+                f"安全限制: 仅允许连接本地模型 (localhost/127.0.0.1/10.x/172.16-31.x/192.168.x)，"
+                f"禁止访问云端服务。当前地址: {url}"
+            )
         
-        if 'api.openai.com' in url and '/v1' not in url:
-            url = url.rstrip('/') + '/v1'
-        
-        # 规则3：常规模式 - 需要拼接 /chat/completions
-        return url.rstrip('/') + '/chat/completions'
+        return url
     
     # _provider_base_urls 和 _provider_display_names 已移除，相关逻辑改由 config_manager 统一管理
     
